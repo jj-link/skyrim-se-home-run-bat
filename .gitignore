@@ -1,0 +1,33 @@
+# Skyrim Mod .gitignore
+
+# Compiled scripts
+*.pex
+
+# Visual Studio / IDE
+.vs/
+.vscode/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Cache
+*.log
+*.bak
+*.tmp
+
+# Creation Kit temp files
+*.esp~
+*.esm~
+*.bk
+
+# BSA archives (usually binary, track separately if needed)
+*.ba2
+
+# Documentation (optional - uncomment to ignore)
+#*.md
+#!README.md
