@@ -1,156 +1,54 @@
-# Home Run Bat Mod - Implementation Plan
+# Home Run Bat Mod - Plan
 
-## Overview
-Create a Skyrim SE mod that adds a home-run bat weapon which launches NPCs across the map using physics-based ragdoll impulses.
+## Goals
+- Add a weapon named "Home Run Bat" that launches NPCs with a strong ragdoll impulse and can optionally kill on hit
+- Provide configurable strength, kill toggle, and sound toggle via MCM
+- Keep scripts loosely coupled (config, sound, weapon, MCM)
+- Place the weapon in an easily accessible Whiterun location (Warmaiden's)
+- Create a CK Sound record and point it at the sound file
+
+## Decisions
+- Location: Warmaiden's in Whiterun (add to vendor container or leveled list used by that shop)
+- Blocked hits: still launch and still kill when kill-on-hit is enabled
+- Kill credit: always attributed to the attacker
+- Strength defaults: start high for dramatic distance (default 20000, range 5000-40000), tune after testing
+- Sound asset: convert to Data/Sound/fx/HomeRunBat/homerun_screech.wav (or .xwm if required), then create a CK Sound record pointing to it
+
+## Scope
+In-scope:
+- Papyrus scripts and MCM
+- Creation Kit records and plugin (.esp)
+- Test checklist for gameplay behavior
+
+Out-of-scope (for now):
+- Custom meshes or textures
+- Custom animations
+- Voice or quest content
 
 ## Architecture (Loose Coupling)
+- HomeRunBatConfig (Quest) stores settings and exposes getters/setters
+- HomeRunBatSound plays audio using config and a Sound form
+- HomeRunBat weapon script applies impulse and kill logic, reads only from config/sound
+- HomeRunBatMCM writes into config and never touches weapon logic directly
+- Scripts only call the Sound form
 
-```
-Data Layer (Config.json, Sound.xwm)
-         │
-         ▼
-Configuration Layer (HomeRunBatConfig.psc)
-         │
-    ┌────┴────┐
-    ▼         ▼
-Sound Layer   Weapon Layer
-(Sound.psc)   (HomeRunBat.psc)
-    │              │
-    └──────┬───────┘
-           ▼
-    MCM Layer (HomeRunBatMCM.psc)
-```
-
-### Loose Coupling Benefits
-- Weapon Layer is independent of UI - MCM changes don't affect weapon logic
-- Sound Layer is pluggable - can swap sound handlers without touching weapon code
-- Config Layer abstracts storage - can switch from globals to JContainers without breaking scripts
-- Each script has single responsibility
-
----
-
-## Step-by-Step Implementation
-
-### Step 1: Asset Preparation (COMPLETED)
-- [x] Extracted `smash-bros-ultimate-super-smash-bros-ultimate-home-run-bat-hit-sound-effect.zip`
-- [x] Copied WAV to `Data/Sound/fx/homerun_screech.wav`
-- [x] Convert audio to `.xwm` format required (TODO - requires ffmpeg or Xbox Audio Tool)
-
-### Step 2: Script Development
-
-#### 2.1 HomeRunBatConfig.psc (COMPLETED)
-- Purpose: Load/save user settings, provide abstraction layer
-- Location: `Data/Scripts/Source/HomeRunBatConfig.psc`
-
-#### 2.2 HomeRunBatSound.psc (COMPLETED)
-- Purpose: Handle sound playback independently
-- Location: `Data/Scripts/Source/HomeRunBatSound.psc`
-
-#### 2.3 HomeRunBat.psc (COMPLETED - Core Weapon Script)
-- Purpose: Handle hit detection and physics
-- Location: `Data/Scripts/Source/HomeRunBat.psc`
-
-#### 2.4 HomeRunBatMCM.psc (COMPLETED)
-- Purpose: Settings menu UI
-- Location: `Data/Scripts/Source/HomeRunBatMCM.psc`
-
-### Step 3: Sound File (COMPLETED - Using WAV directly)
-- [x] Sound file exists at `Data/Sound/fx/homerun_screech.wav`
-- [x] Skyrim SE supports loose WAV files for sound effects
-- [x] No conversion to .xwm required for loose file deployment
-
-## Remaining Steps
-
-### A. Compile Scripts → .pex
-Use **Creation Kit Guide** (`CREATION_KIT_GUIDE.md`) for detailed instructions:
-1. Open Creation Kit
-2. File → Compile Scripts
-3. Verify no errors in output
-
-### B. Create Plugin (.esp)
-Follow `CREATION_KIT_GUIDE.md`:
-1. Create Sound record from WAV file
-2. Create Weapon record (HRB_HomeRunBat)
-3. Assign scripts and properties
-4. Add to merchant leveled list
-5. Save as `HomeRunBat.esp`
-
-### C. Install and Test
-1. Move compiled .pex files to `Data/Scripts/`
-2. Place `HomeRunBat.esp` in Data folder
-3. Launch Skyrim SE
-4. Test weapon at Belethor's shop
-
-### Step 6: Finalize Project Structure (PENDING)
-```
-skyrim_mod/
-├── Data/
-│   ├── Scripts/
-│   │   ├── Source/
-│   │   │   ├── HomeRunBatConfig.psc
-│   │   │   ├── HomeRunBatSound.psc
-│   │   │   ├── HomeRunBat.psc
-│   │   │   └── HomeRunBatMCM.psc
-│   │   ├── HomeRunBatConfig.pex
-│   │   ├── HomeRunBatSound.pex
-│   │   ├── HomeRunBat.pex
-│   │   └── HomeRunBatMCM.pex
-│   ├── Sound/
-│   │   └── fx/
-│   │       └── homerun_screech.xwm
-│   └── HomeRunBat.esp
-└── plan.md
-```
-
-### Step 7: Testing Checklist (PENDING)
-- [ ] Weapon appears in merchant inventory
-- [ ] Weapon can be equipped and swings normally
-- [ ] Hit on NPC launches them ragdoll-style
-- [ ] Knockback strength scales correctly
-- [ ] Kill on hit works as expected
-- [ ] MCM menu opens and settings save
-- [ ] Sound plays when enabled, silent when disabled
-- [ ] Settings persist across game sessions
-- [ ] No crashes or CTDs on impact
-
----
-
-## Dependencies
-| Dependency | Purpose | Required |
-|------------|---------|----------|
-| SKSE64 | ApplyHavokImpulse function | Yes |
-| SkyUI | MCM framework | Yes |
-
----
-
-## Current Project State
-
-### Completed
-- [x] Asset preparation (sound file in place)
-- [x] All 4 Papyrus scripts created with loose coupling
-- [x] README.md with installation instructions
-- [x] CREATION_KIT_GUIDE.md with step-by-step CK instructions
-- [x] Project structure organized
-
-## Remaining (Requires User Action)
-1. **Compile scripts** using Creation Kit
-2. **Create .esp plugin** using Creation Kit
-3. **Install and test** in-game
-
----
-
-## Notes
-
-### Sound Conversion
-If direct .xwm conversion fails:
-1. Use ffmpeg: `ffmpeg -i homerun_screech.wav -ac 2 -acodec adpcm_ima_wav homerun_screech.wav`
-2. Then use Bethesda's xWMAEncode.exe or keep as .wav (vanilla can handle some .wav formats)
-
-### Mesh Reuse
-Using vanilla club mesh:
-- Path: `Weapons/Club/Club.nif`
-- No custom mesh required
-- Players can use texture mods to customize appearance
-
-### Attack Animation
-The wooden club animation set provides natural pacing - no custom animation needed.
+## Implementation Steps (Iterative)
+1. Smallest working version (knockback only)
+   - Create a weapon and attach a minimal script that applies a strong impulse on hit
+   - Compile and test: verify NPCs fly a long distance
+2. Reliable launch behavior
+   - Confirm impulse direction (away from attacker) and handle blocked hits
+   - Add defensive guards and verify no errors
+3. Kill-on-hit
+   - Add kill logic with attacker kill credit
+   - Test kill toggle behavior (always on for now)
+4. Sound
+   - Convert audio to Data/Sound/fx/HomeRunBat/homerun_screech.wav
+   - Create a CK Sound record and call it from the hit script
+5. Configuration + MCM
+   - Add HomeRunBatConfig (Quest) + MCM to tune strength and toggles
+   - Wire scripts so the weapon reads settings from config
+6. Placement
+   - Add the weapon to Warmaiden's vendor container or leveled list
+7. Final test pass
+   - Acquisition, launch distance, blocked hits, kill credit, sound, MCM persistence
