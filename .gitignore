@@ -1,0 +1,6 @@
+/.local/
+/build/
+/tools/PluginBuilder/bin/
+/tools/PluginBuilder/obj/
+__pycache__/
+*.pyc
