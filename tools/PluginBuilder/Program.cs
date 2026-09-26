@@ -1,6 +1,9 @@
 using Mutagen.Bethesda;
 using Mutagen.Bethesda.Plugins;
 using Mutagen.Bethesda.Skyrim;
+using Mutagen.Bethesda.Plugins.Assets;
+using Mutagen.Bethesda.Skyrim.Assets;
+using Noggog;
 
 if (args.Length != 2)
 {
@@ -21,6 +24,9 @@ var template = skyrim.Weapons.Single(w => w.EditorID == "IronGreatsword");
 var bat = mod.Weapons.DuplicateInAsNewRecord(template);
 var launch = mod.MagicEffects.AddNew();
 var enchantment = mod.ObjectEffects.AddNew();
+var firstPerson = mod.Statics.AddNew();
+var impact = mod.SoundDescriptors.AddNew();
+var impactMarker = mod.SoundMarkers.AddNew();
 
 bat.EditorID = "HRBHomeRunBat";
 bat.Name = "Home Run Bat";
@@ -30,6 +36,30 @@ bat.BasicStats.Weight = 5;
 bat.BasicStats.Value = 250;
 bat.EnchantmentAmount = 0;
 bat.ObjectEffect.SetTo(enchantment.FormKey);
+bat.Model = new Model { File = @"HomeRunBat\HomeRunBat.nif" };
+bat.ObjectBounds = new ObjectBounds
+{
+    First = new P3Int16(-5, -22, -5),
+    Second = new P3Int16(5, 78, 5)
+};
+firstPerson.EditorID = "HRBFirstPersonBat";
+firstPerson.Model = new Model { File = @"HomeRunBat\HomeRunBat.nif" };
+firstPerson.ObjectBounds = new ObjectBounds
+{
+    First = new P3Int16(-5, -22, -5),
+    Second = new P3Int16(5, 78, 5)
+};
+bat.FirstPersonModel.SetTo(firstPerson.FormKey);
+
+impact.EditorID = "HRBImpactSound";
+impact.Type = SoundDescriptor.DescriptorType.Standard;
+impact.Category.SetTo(new FormKey(skyrim.ModKey, 0x0172A1));
+impact.OutputModel.SetTo(new FormKey(skyrim.ModKey, 0x07E5DC));
+impact.SoundFiles.Add(new AssetLink<SkyrimSoundAssetType>(@"fx\HomeRunBat\impact.wav"));
+impact.LoopAndRumble = new SoundLoopAndRumble { Loop = SoundDescriptor.LoopType.None };
+impact.Priority = 64;
+impactMarker.EditorID = "HRBImpact";
+impactMarker.SoundDescriptor.SetTo(impact.FormKey);
 
 launch.EditorID = "HRBLaunchEffect";
 launch.Name = "Home Run";
@@ -37,13 +67,17 @@ launch.Archetype = new MagicEffectArchetype(MagicEffectArchetype.TypeEnum.Script
 launch.CastType = CastType.FireAndForget;
 launch.TargetType = TargetType.Touch;
 launch.ResistValue = ActorValue.None;
-launch.Flags = MagicEffect.Flag.Hostile | MagicEffect.Flag.Detrimental
-    | MagicEffect.Flag.NoDuration | MagicEffect.Flag.NoMagnitude
+launch.Flags = MagicEffect.Flag.NoDuration | MagicEffect.Flag.NoMagnitude
     | MagicEffect.Flag.NoArea | MagicEffect.Flag.HideInUI
     | MagicEffect.Flag.NoDeathDispel;
 launch.VirtualMachineAdapter = new VirtualMachineAdapter();
 var launchScript = new ScriptEntry { Name = "HRBLaunchEffect" };
 launchScript.Properties.Add(new ScriptFloatProperty { Name = "LaunchForce", Data = 15.0f });
+launchScript.Properties.Add(new ScriptObjectProperty
+{
+    Name = "ImpactSound",
+    Object = impactMarker.ToLink<ISkyrimMajorRecordGetter>()
+});
 launch.VirtualMachineAdapter.Scripts.Add(launchScript);
 
 enchantment.EditorID = "HRBEnchantment";

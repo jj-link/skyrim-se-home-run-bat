@@ -27,8 +27,8 @@ copy at Warmaiden's. Custom animations and a native runtime DLL are not planned.
 5. Add acquisition and verify inventory, drop/recovery, cell changes, and save/load.
 6. Package and retest from the installable archive in a clean profile.
 
-Do not ship the temporary vanilla weapon model as the finished mod. Do not add
-forced death, unrelated global physics changes, polling, or a configuration layer.
+Do not ship a renamed vanilla weapon as the finished mod. Do not add forced
+death, unrelated global physics changes, actor-scanning loops, or a settings layer.
 
 ## Development build
 
@@ -45,9 +45,9 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tools/build.ps1
 ```
 
 `-GamePath` overrides registry discovery. `-OutputPath` overrides the output Data
-directory. The command builds `HomeRunBat.esp` and `Scripts/HRBLaunchEffect.pex`.
-It does not install files into the game. Dependencies and build work files stay
-under the ignored project-local `.local` directory.
+directory. The command builds the ESP and PEX and copies the bat NIF, two DDS
+textures, and original impact WAV. It does not install files into the game.
+Dependencies and build work files stay under the ignored project-local `.local`.
 
 Current local FormIDs, which must remain stable:
 
@@ -56,9 +56,30 @@ Current local FormIDs, which must remain stable:
 | HRBHomeRunBat | 000800 |
 | HRBLaunchEffect | 000801 |
 | HRBEnchantment | 000802 |
+| HRBFirstPersonBat (STAT) | 000803 |
+| HRBImpactSound (SNDR) | 000804 |
+| HRBImpact (SOUN) | 000805 |
 
 The load-order prefix is not fixed. Use `help "Home Run Bat" 4` in the game to
 find the actual weapon ID before `player.additem` and `player.equipitem`.
+
+Original asset sources are in `assets/model` and the procedural generators:
+
+```powershell
+python tools/build_bat.py --fetch-exporter
+python tools/create_impact.py
+```
+
+The mesh generator uses Blender 5, Pillow, NumPy, the Creation Kit texture
+converter, and a SHA-256-pinned PyNifly release. It authors its own geometry,
+textures, and collision; extracted vanilla models are local inspection references
+only and are not packaged. The NIF includes `Prn=WeaponBack`, required for the
+equipped model to attach correctly, and its inventory marker and dynamic collision.
+
+`tools/package.ps1 -Version <version> -InputPath <Data-directory>` writes an
+explicit six-file ZIP under `build/`. Its root is the contents of Skyrim's Data
+directory. Source files, the old unlicensed MP3, and local diagnostics are excluded.
+The development `0.1.0-dev` archive is a packaging smoke artifact, not a release.
 
 ## Isolated test setup
 
@@ -80,21 +101,61 @@ contains a development trace; remove that trace from the release build.
 
 Observed on 2026-09-26 with Skyrim/Creation Kit 1.7.99.0 and MO2 2.5.2:
 
-- The reproducible build command generated the plugin and compiled the Papyrus
-  script with zero compiler errors or warnings.
-- The game loaded the plugin, found the weapon through console search, and
-  equipped it.
-- `HRBBaseline.ess` was created under the isolated profile's `saves` directory.
-- One normal melee hit on Ulfberth War-Bear invoked the effect once, identifying
-  target `000D15B0` and caster `00000014`, with `dead=False`.
-- The target survived and returned to standing after the knockdown. This indoor
-  check does not establish the required outdoor launch distance.
-- The actual attack recording is local at `.local/evidence/normal-hit-01.gif`.
-- Vanilla/DLC script warnings also appear in the game log; a globally empty
-  Papyrus log is not an appropriate acceptance criterion.
+- Default and separate-output builds succeeded; Papyrus reported zero errors and
+  warnings. The packaging command produced exactly the six intended files and
+  the ZIP passed CRC verification. Clean-profile archive installation is pending.
+- An isolated diagnostic actor records physical hit flags; the player is also
+  instrumented in the local-only probe plugin. Physical and enchantment hit
+  callbacks can both appear for one contact; they are not two launches.
+- Normal and power contacts invoked one launch each in the exercised cases.
+  An NPC wielding the bat launched the player; a subsequent bat contact explicitly
+  logged `blocked=TRUE`, followed by one launch with that NPC as caster.
+- Living humanoids visibly ragdoll and return to standing. Indoor ceilings and
+  furniture constrain travel; force 15 has not passed the outdoor distance gate.
+- A killing blow logged `dead=TRUE` at effect start and subsequently `OnDeath`.
+  The corpse dropped near the impact rather than visibly flying away. The
+  living-only push operation is not accepted as the corpse implementation.
+- Immediate pushes during paired finishers interrupted the animation and left
+  targets alive. The current prototype waits while either actor is in a finisher.
+  This specific deferred-finisher path still needs verification.
+- Full magic resistance suppressed the original hostile effect. Removing
+  Hostile/Detrimental allowed a launch with `magicresist=100`.
+- **Absorption remains a delivery failure:** with `absorbchance=100`, the physical
+  bat hit occurred and the absorption visual played, but the launch effect never
+  started. Neutral effect flags do not solve this. Do not claim every hit works.
+- The original bat now renders in first-person attacks, third-person grip,
+  sheathed on the back, in inventory, and as a dropped/pickable world object.
+  The missing `Prn=WeaponBack` metadata caused the initial equipped-model failure
+  and was corrected against the installed native weapon convention.
+- Sound binding requires a SOUN marker pointing to the SNDR descriptor, not a
+  direct SNDR Papyrus property. After correction, actual system playback captured
+  one matching impact onset (0.8674 correlation over its first 40 ms), with no
+  clipped samples in the 12-second capture. The source WAV is original mono PCM;
+  no sample from the abandoned MP3 is used.
+- Local evidence includes `bat-attachment-fixed.gif`, `bat-third-person.png`,
+  `bat-sheathed.png`, `bat-inventory.png`, and `bat-impact-playback.wav` under
+  `.local/evidence`. Disposable saves remain under the MO2 profile.
+- Vanilla/DLC script warnings also appear; an entirely empty Papyrus log is not
+  an appropriate acceptance criterion. Corrected sound binding produced no
+  launch-script errors in the subsequent exercised contact.
 
-The current model is a vanilla greatsword, force 15 is an experimental value,
-and the full gameplay matrix below has NOT passed. No release is ready yet.
+### Delivery decision required
+
+Native API references:
+[MagicItem](https://ryan.commonlib.dev/MagicItem_8h_source.html),
+[EnchantmentItem](https://ryan.commonlib.dev/EnchantmentItem_8h_source.html),
+[SpellItem](https://ryan.commonlib.dev/SpellItem_8h_source.html), and
+[vanilla AddPerk limitations](https://ck.uesp.net/wiki/AddPerk_-_Actor).
+
+The contact-enchantment prototype does not satisfy the agreed every-hit rule
+against spell absorption. Native class definitions expose no absorption bypass
+for enchantments; actual spells support it, but dynamically adding a hit-spell
+perk does not work for arbitrary NPC wielders in vanilla Papyrus. A native hit
+handler is the proposed route to preserve the rule; it adds an SKSE dependency
+and runtime compatibility requirements. Do not silently accept absorption as an
+exception or add that dependency without agreement.
+
+The remaining matrix has NOT passed. No release is ready.
 
 ## Remaining acceptance matrix
 

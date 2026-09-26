@@ -19,6 +19,19 @@ $baseSources = Join-Path $GamePath 'Data\Source\Scripts'
 $sources = Join-Path $root 'Data\Scripts\Source'
 $scriptOutput = Join-Path $OutputPath 'Scripts'
 $builder = Join-Path $PSScriptRoot 'PluginBuilder\PluginBuilder.csproj'
+$assetPaths = @(
+    'Meshes\HomeRunBat\HomeRunBat.nif'
+    'Textures\HomeRunBat\HomeRunBat.dds'
+    'Textures\HomeRunBat\HomeRunBat_n.dds'
+    'Sound\fx\HomeRunBat\impact.wav'
+)
+$assetRoot = Join-Path $root 'Data'
+foreach ($relativePath in $assetPaths) {
+    $asset = Join-Path $assetRoot $relativePath
+    if (-not (Test-Path -LiteralPath $asset -PathType Leaf)) {
+        throw "Required Home Run Bat asset is missing: $asset"
+    }
+}
 foreach ($required in @($compiler, (Join-Path $baseSources 'TESV_Papyrus_Flags.flg'), (Join-Path $GamePath 'Data\Skyrim.esm'))) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required Creation Kit/game file is missing: $required"
@@ -54,6 +67,15 @@ try {
     }
     finally {
         Pop-Location
+    }
+
+    foreach ($relativePath in $assetPaths) {
+        $source = Join-Path $assetRoot $relativePath
+        $destination = Join-Path $OutputPath $relativePath
+        if (-not [string]::Equals($source, $destination, [StringComparison]::OrdinalIgnoreCase)) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destination) | Out-Null
+            Copy-Item -LiteralPath $source -Destination $destination -Force
+        }
     }
 }
 finally {
