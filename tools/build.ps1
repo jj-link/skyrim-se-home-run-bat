@@ -1,6 +1,7 @@
 param(
     [string]$GamePath,
-    [string]$OutputPath
+    [string]$OutputPath,
+    [switch]$Diagnostics
 )
 
 Set-StrictMode -Version Latest
@@ -55,6 +56,7 @@ try {
         [Environment]::SetEnvironmentVariable($name, $buildEnvironment[$name], 'Process')
     }
     New-Item -ItemType Directory -Force -Path $scriptOutput | Out-Null
+    & (Join-Path $PSScriptRoot 'build-native.ps1') -OutputPath $OutputPath -Diagnostics:$Diagnostics
     & dotnet restore $builder --locked-mode --nologo
     if ($LASTEXITCODE -ne 0) { throw 'Plugin dependency restore failed.' }
     & dotnet run --project $builder --configuration Release --no-restore -- (Join-Path $GamePath 'Data') $OutputPath
@@ -62,7 +64,7 @@ try {
 
     Push-Location $baseSources
     try {
-        & $compiler HRBLaunchEffect '-f=TESV_Papyrus_Flags.flg' "-i=$sources;$baseSources" "-o=$scriptOutput"
+        & $compiler HRBLaunchController '-f=TESV_Papyrus_Flags.flg' "-i=$sources;$baseSources" "-o=$scriptOutput"
         if ($LASTEXITCODE -ne 0) { throw 'Papyrus compilation failed.' }
     }
     finally {

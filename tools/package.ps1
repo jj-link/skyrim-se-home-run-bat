@@ -30,7 +30,9 @@ if (Test-Path -LiteralPath $ArchivePath) {
 # Archive names are relative to Skyrim's Data directory, not an enclosing Data folder.
 $packagePaths = @(
     'HomeRunBat.esp'
-    'Scripts/HRBLaunchEffect.pex'
+    'Scripts/HRBLaunchController.pex'
+    'SKSE/Plugins/HomeRunBat.dll'
+    'SEQ/HomeRunBat.seq'
     'Meshes/HomeRunBat/HomeRunBat.nif'
     'Textures/HomeRunBat/HomeRunBat.dds'
     'Textures/HomeRunBat/HomeRunBat_n.dds'
