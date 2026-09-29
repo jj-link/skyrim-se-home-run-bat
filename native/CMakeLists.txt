@@ -57,7 +57,7 @@ target_compile_definitions(hrb_sdk PUBLIC RUNTIME RUNTIME_VERSION=0x01070630)
 # the linker discard these rather than pulling unrelated engine implementations.
 target_compile_options(hrb_sdk PRIVATE /Gy /Gw /W3 /EHsc)
 
-add_library(HomeRunBat SHARED HomeRunBat.cpp)
+add_library(HomeRunBat SHARED HomeRunBat.cpp DragonLaunch.cpp)
 target_link_libraries(HomeRunBat PRIVATE hrb_sdk)
 target_compile_options(HomeRunBat PRIVATE /Gy /Gw /W4 /EHsc)
 target_compile_definitions(HomeRunBat PRIVATE HRB_DIAGNOSTICS=$<BOOL:${HRB_DIAGNOSTICS}>)

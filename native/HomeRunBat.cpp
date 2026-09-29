@@ -1,12 +1,15 @@
+#include "DragonLaunch.h"
 #include "common/IPrefix.h"
 #include "skse64/PluginAPI.h"
 #include "skse64/GameData.h"
 #include "skse64/GameEvents.h"
 #include "skse64/PapyrusArgs.h"
+#include "skse64/PapyrusNativeFunctions.h"
 #include "skse64/PapyrusVM.h"
 #include "skse64_common/skse_version.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cwchar>
 #include <share.h>
 #include <type_traits>
@@ -63,6 +66,18 @@ void InitializationFailure(const char* reason)
 {
     Log("DISABLED: %s", reason);
     MessageBoxA(nullptr, reason, "Home Run Bat could not initialize", MB_OK | MB_ICONERROR);
+}
+
+bool QueueDragonLaunchFromScript(TESQuest*, Actor* target, Actor* attacker)
+{
+    return hrb::QueueDragonLaunch(target, attacker) == hrb::DragonContact::Queued;
+}
+
+bool RegisterDragonFunctions(VMClassRegistry* registry)
+{
+    registry->RegisterFunction(new NativeFunction2<TESQuest, bool, Actor*, Actor*>(
+        "QueueDragonLaunch", "HRBLaunchController", QueueDragonLaunchFromScript, registry));
+    return true;
 }
 
 // GameEvents.h:29-38 declares these exact fields, but keeps them private.
@@ -135,25 +150,30 @@ EventDispatcher<TESHitEvent>* FindHitDispatcher(SkyrimVM* vm)
     return result;
 }
 
-// QueueEvent consumes Copy synchronously, as in SDK PapyrusEvents.cpp's stack
-// EventQueueFunctor2. Only the VM-owned typed identifiers survive this call;
-// no actor pointer, registry pointer, or borrowed argument functor is deferred.
+// QueueEvent consumes Copy synchronously; only VM-owned identifiers and the
+// per-contact native-dragon decision survive it, never borrowed actor pointers.
 class BatHitArguments final : public IFunctionArguments
 {
 public:
-    BatHitArguments(VMClassRegistry* registry, Actor* target, Actor* attacker) :
-        registry_(registry), target_(target), attacker_(attacker) {}
+    BatHitArguments(VMClassRegistry* registry, Actor* target, Actor* attacker,
+        bool dragonTarget, bool dragonQueued) :
+        registry_(registry), target_(target), attacker_(attacker),
+        dragonTarget_(dragonTarget), dragonQueued_(dragonQueued) {}
 
     bool Copy(Output* output) override
     {
-        output->Resize(2);
+        output->Resize(4);
         auto* targetValue = output->Get(0);
         auto* attackerValue = output->Get(1);
-        if (!targetValue || !attackerValue) {
+        auto* dragonValue = output->Get(2);
+        auto* queuedValue = output->Get(3);
+        if (!targetValue || !attackerValue || !dragonValue || !queuedValue) {
             return false;
         }
         PackValue(targetValue, &target_, registry_);
         PackValue(attackerValue, &attacker_, registry_);
+        dragonValue->SetBool(dragonTarget_);
+        queuedValue->SetBool(dragonQueued_);
         return targetValue->IsIdentifier() && targetValue->data.id &&
             attackerValue->IsIdentifier() && attackerValue->data.id;
     }
@@ -162,6 +182,8 @@ private:
     VMClassRegistry* registry_;
     Actor* target_;
     Actor* attacker_;
+    bool dragonTarget_;
+    bool dragonQueued_;
 };
 
 class BatHitSink final : public BSTEventSink<TESHitEvent>
@@ -197,13 +219,30 @@ public:
         }
         // A quest handle is obtained from the current VM, never retained over
         // save/new-game reverts. QueueEvent owns its queued values after return.
+        const auto dragon = hrb::QueueDragonLaunch(
+            static_cast<Actor*>(hit->target), static_cast<Actor*>(hit->caster));
         policy->AddRef(handle);
-        BatHitArguments args(registry, static_cast<Actor*>(hit->target), static_cast<Actor*>(hit->caster));
+        BatHitArguments args(registry, static_cast<Actor*>(hit->target),
+            static_cast<Actor*>(hit->caster), dragon != hrb::DragonContact::NotDragon,
+            dragon == hrb::DragonContact::Queued);
         registry->QueueEvent(handle, eventName_, &args);
         policy->Release(handle);
 #if HRB_DIAGNOSTICS
-        Log("Accepted contact: target=%08X attacker=%08X source=%08X projectile=%08X flags=%08X; submitted OnBatHit",
-            hit->target->formID, hit->caster->formID, hit->sourceFormID, hit->projectileFormID, hit->flags & 0xFu);
+        Log("Accepted contact: target=%08X targetPtr=%p attacker=%08X source=%08X projectile=%08X flags=%08X dragon=%u queued=%u; submitted OnBatHit",
+            hit->target->formID, hit->target, hit->caster->formID,
+            hit->sourceFormID, hit->projectileFormID, hit->flags & 0xFu,
+            dragon != hrb::DragonContact::NotDragon,
+            dragon == hrb::DragonContact::Queued);
+        if (dragon != hrb::DragonContact::NotDragon) {
+            auto* target = static_cast<Actor*>(hit->target);
+            RelocAddr<void* (*)(Actor*)> getController(0x006750B0);
+            auto* controller = static_cast<const unsigned char*>(getController(target));
+            Log("Dragon contact controller: actor=%p controller=%p flying=%u killmove=%u mode=%u state=%u flags=%08X",
+                target, controller, (target->actorState.flags04 >> 18) & 7,
+                hrb::IsInKillMove(target), controller ? *reinterpret_cast<const UInt32*>(controller + 0x200) : 0xFFFFFFFFu,
+                controller ? *reinterpret_cast<const UInt32*>(controller + 0x21C) : 0xFFFFFFFFu,
+                controller ? *reinterpret_cast<const UInt32*>(controller + 0x218) : 0xFFFFFFFFu);
+        }
 #endif
         return kEvent_Continue;
     }
@@ -241,6 +280,7 @@ void OnSKSEMessage(SKSEMessagingInterface::Message* message)
         InitializationFailure("The Skyrim 1.7.99 TESHitEvent dispatcher could not be uniquely identified. See HomeRunBat.log beside the DLL.");
         return;
     }
+    hrb::LoadDragonRaceIDs();
 
     // Deliberately initialized after DataLoaded, never during DLL static init.
     // BSFixedString has no destructor; this single interned name lives until exit.
@@ -248,10 +288,21 @@ void OnSKSEMessage(SKSEMessagingInterface::Message* message)
     g_hitSink.Initialize(weapon, static_cast<TESQuest*>(quest), &eventName);
     dispatcher->AddEventSink(&g_hitSink);
     g_registered = true;
-    Log("Registered physical hit sink: weapon=%08X quest=%08X; OnBatHit(Actor target, Actor attacker)",
+    Log("Registered physical hit sink: weapon=%08X quest=%08X; OnBatHit(Actor target, Actor attacker, Bool dragonTarget, Bool dragonQueued)",
         weapon->formID, quest->formID);
 }
 }
+
+#if HRB_DIAGNOSTICS
+namespace hrb
+{
+void LogDragonImpact(const Actor* target, const void* controller, UInt32 previousMode, float x, float y, float z)
+{
+    Log("Dragon impact APPLIED: target=%08X actor=%p controller=%p mode=%u->2 impact=(%.5f, %.5f, %.5f)",
+        target->formID, target, controller, previousMode, x, y, z);
+}
+}
+#endif
 
 extern "C"
 {
@@ -274,6 +325,16 @@ __declspec(dllexport) bool SKSEPlugin_Load(const SKSEInterface* skse)
         skse->skseVersion < MAKE_EXE_VERSION(2, 3, 0)) {
         Log("Rejected runtime: requires Skyrim 1.7.99.0 (0x%08X) and SKSE 2.3.0 or newer; received runtime=0x%08X SKSE=0x%08X",
             kRuntime, skse ? skse->runtimeVersion : 0, skse ? skse->skseVersion : 0);
+        return false;
+    }
+    if (!hrb::InitializeDragonPhysics(skse)) {
+        InitializationFailure("Skyrim 1.7.99 dragon controller instructions or SKSE task interface differ. Home Run Bat is disabled.");
+        return false;
+    }
+    auto* papyrus = static_cast<SKSEPapyrusInterface*>(skse->QueryInterface(kInterface_Papyrus));
+    if (!papyrus || papyrus->interfaceVersion < SKSEPapyrusInterface::kInterfaceVersion ||
+        !papyrus->Register(RegisterDragonFunctions)) {
+        InitializationFailure("SKSE Papyrus registration failed. Home Run Bat is disabled.");
         return false;
     }
     auto* messaging = static_cast<SKSEMessagingInterface*>(skse->QueryInterface(kInterface_Messaging));

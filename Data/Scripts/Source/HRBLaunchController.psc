@@ -1,14 +1,15 @@
 Scriptname HRBLaunchController extends Quest
 
-Float Property LaunchForce = 15.0 Auto
+Float Property LaunchForce = 30.0 Auto
 Sound Property ImpactSound Auto
 
-Event OnBatHit(Actor akTarget, Actor akAttacker)
+Bool Function QueueDragonLaunch(Actor akTarget, Actor akAttacker) Native
+
+Event OnBatHit(Actor akTarget, Actor akAttacker, Bool abDragonTarget, Bool abDragonQueued)
     If !akTarget || !akAttacker || akTarget == akAttacker
         Return
     EndIf
 
-    Debug.Trace("HRB native contact: target=" + akTarget + " attacker=" + akAttacker)
     ImpactSound.Play(akTarget)
 
     Float awayX = akTarget.GetPositionX() - akAttacker.GetPositionX()
@@ -35,11 +36,15 @@ Event OnBatHit(Actor akTarget, Actor akAttacker)
         ; Give the newly attached rigid bodies a physics step before the impulse.
         Utility.Wait(0.1)
         If akTarget.Is3DLoaded() && akTarget.IsDead()
-            Debug.Trace("HRB corpse impulse: target=" + akTarget)
             akTarget.ApplyHavokImpulse(awayX, awayY, 0.75, 1000.0)
         EndIf
+    ElseIf abDragonTarget
+        ; Native launch was already submitted on physical contact. A finisher
+        ; or temporarily unavailable controller gets one post-finisher retry.
+        If !abDragonQueued && !QueueDragonLaunch(akTarget, akAttacker)
+            akAttacker.PushActorAway(akTarget, LaunchForce)
+        EndIf
     Else
-        Debug.Trace("HRB living launch: target=" + akTarget)
         akAttacker.PushActorAway(akTarget, LaunchForce)
     EndIf
 EndEvent

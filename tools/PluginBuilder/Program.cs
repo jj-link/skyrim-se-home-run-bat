@@ -77,7 +77,7 @@ controller.VirtualMachineAdapter = new QuestAdapter
     FileName = string.Empty
 };
 var controllerScript = new ScriptEntry { Name = "HRBLaunchController" };
-controllerScript.Properties.Add(new ScriptFloatProperty { Name = "LaunchForce", Data = 15.0f });
+controllerScript.Properties.Add(new ScriptFloatProperty { Name = "LaunchForce", Data = 30.0f });
 controllerScript.Properties.Add(new ScriptObjectProperty
 {
     Name = "ImpactSound",
